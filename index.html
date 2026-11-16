@@ -233,7 +233,7 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
     <div class="sechead">Sincronizar con otro dispositivo</div>
     <div class="group"><button class="row noicon" id="expBtn"><div class="tx"><div class="t">Exportar progreso</div><div class="d">Genera un código para llevarlo a otro dispositivo</div></div></button><button class="row noicon" id="impBtn"><div class="tx"><div class="t">Importar progreso</div><div class="d">Pega el código de otro dispositivo</div></div></button></div>
     <div class="group"><button class="row noicon danger" id="resetBtn"><div class="tx"><div class="t">Reiniciar progreso</div></div></button></div>
-    <p class="secfoot" style="margin-bottom:30px">Pendientes = las que aún no has hecho y las que fallaste la última vez. Una pregunta sale de pendientes cuando la aciertas.</p>
+    <p class="secfoot" style="margin-bottom:30px">Pendientes = las que aún no has hecho y las que fallaste la última vez. Una pregunta sale de pendientes cuando la aciertas.<br><span style="color:var(--label3)">Versión 28460a</span></p>
   </div>
 </section>
 
@@ -281,7 +281,7 @@ var LS_PW='fc_pw', LS_ST='fc_stats_v1', LS_MODE='fc_mode';
 var DATA=null, Q=[], BYID={};
 var $=function(id){return document.getElementById(id)};
 function ls(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
-function show(id){document.querySelectorAll('.screen').forEach(function(s){s.classList.toggle('on',s.id===id)});window.scrollTo(0,0)}
+function show(id){if(id!=='sQuiz'&&window.__maybeReload)window.__maybeReload();document.querySelectorAll('.screen').forEach(function(s){s.classList.toggle('on',s.id===id)});window.scrollTo(0,0)}
 function toast(t){var el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(function(){el.classList.remove('on')},1800)}
 
 /* ---------- crypto ---------- */
@@ -541,7 +541,23 @@ function finish(){
 $('doneHome').onclick=function(){renderHome();show('sHome')};
 
 /* ---------- boot ---------- */
-if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}
+window.APP_VER='28460a';
+if('serviceWorker' in navigator){
+  var hadCtrl=!!navigator.serviceWorker.controller,reloading=false,pendingReload=false;
+  navigator.serviceWorker.addEventListener('controllerchange',function(){
+    if(!hadCtrl||reloading)return;
+    if(document.getElementById('sQuiz').classList.contains('on')){pendingReload=true;return}
+    reloading=true;location.reload();
+  });
+  window.__maybeReload=function(){if(pendingReload&&!reloading){reloading=true;location.reload()}};
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(reg){
+      var up=function(){reg.update().catch(function(){})};
+      up();
+      document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')up()});
+    }).catch(function(){});
+  });
+}
 var saved=ls(LS_PW);
 if(saved){unlock(saved,true).then(function(ok){if(!ok)show('sLock')})}else show('sLock');
 })();
