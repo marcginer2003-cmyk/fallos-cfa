@@ -188,7 +188,7 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
 .sync p{font-size:14px;color:var(--label2);margin-bottom:12px}
 .sync textarea{width:100%;height:110px;border-radius:12px;border:0;background:var(--fill);color:var(--label);padding:12px;font-size:14px;font-family:ui-monospace,Menlo,monospace;resize:none;margin-bottom:12px}
 .sync .bigbtn{margin-bottom:10px}
-.toast{position:fixed;left:50%;bottom:calc(30px + var(--safe-b));transform:translateX(-50%) translateY(20px);background:var(--card2);color:var(--label);padding:11px 18px;border-radius:14px;font-size:15px;opacity:0;transition:all .3s;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.18);pointer-events:none;white-space:nowrap}
+.toast{z-index:70!important;position:fixed;left:50%;bottom:calc(30px + var(--safe-b));transform:translateX(-50%) translateY(20px);background:var(--card2);color:var(--label);padding:11px 18px;border-radius:14px;font-size:15px;opacity:0;transition:all .3s;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.18);pointer-events:none;white-space:nowrap}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
@@ -271,7 +271,7 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
   </div>
 </section>
 
-<div class="sync" id="sync"><div class="box"><h3 id="syncT"></h3><p id="syncP"></p><textarea id="syncTa" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea><button class="bigbtn" id="syncGo"></button><button class="bigbtn" id="syncX" style="background:var(--fill);color:var(--blue);margin-bottom:0">Cerrar</button></div></div>
+<div class="sync" id="sync"><div class="box"><h3 id="syncT"></h3><p id="syncP"></p><textarea id="syncTa" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"></textarea><div id="syncE" style="font-size:14px;margin:-4px 0 12px;min-height:0"></div><button class="bigbtn" id="syncPaste" style="background:var(--fill);color:var(--blue)">Pegar del portapapeles</button><button class="bigbtn" id="syncGo"></button><button class="bigbtn" id="syncX" style="background:var(--fill);color:var(--blue);margin-bottom:0">Cerrar</button></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -370,17 +370,50 @@ window.addEventListener('scroll',function(){var y=window.scrollY>8;document.quer
 
 /* ---------- sync ---------- */
 var SYNC_MODE='';
+function encodeST(){
+  var parts=[];
+  Object.keys(ST).forEach(function(id){var x=ST[id];if(!x)return;
+    parts.push(id+'.'+(x.last?1:0)+'.'+(x.n||0)+'.'+(x.ok||0)+'.'+Math.round((x.t||0)/1000).toString(36))});
+  return 'FCFA2:'+parts.join(',');
+}
+function decodeCode(raw){
+  // devuelve {id:{n,ok,last,t}} o lanza un Error con mensaje para el usuario
+  var txt=String(raw||'').replace(/[​-‏⁠-⁯﻿]/g,'');
+  if(!txt.trim())throw new Error('No has pegado nada');
+  var m=txt.match(/fcfa\s*([12])\s*:/i);
+  var ver=m?m[1]:(/[a-z0-9]-[a-z0-9-]*\.[01]\.\d/i.test(txt)?'2':'1');
+  var body=m?txt.slice(m.index+m[0].length):txt;
+  var out={},cnt=0;
+  if(ver==='2'){
+    body=body.replace(/\s+/g,'');
+    body.split(/[,;]/).forEach(function(e){
+      var r=e.match(/([a-z0-9]+(?:-[a-z0-9]+)+)\.([01])\.(\d+)\.(\d+)\.([a-z0-9]+)/i);if(!r)return;
+      var id=r[1].toLowerCase();if(!BYID[id])return;
+      out[id]={last:+r[2],n:+r[3],ok:+r[4],t:parseInt(r[5],36)*1000};cnt++;
+    });
+  }else{
+    body=body.replace(/[^A-Za-z0-9+\/=_-]/g,'').replace(/-/g,'+').replace(/_/g,'/');
+    body=body.replace(/=+$/,'');while(body.length%4)body+='=';
+    var obj;
+    try{obj=JSON.parse(decodeURIComponent(escape(atob(body))))}
+    catch(e){throw new Error('El código llegó cortado o modificado. Exporta de nuevo en el ordenador (ahora el código es mucho más corto).')}
+    Object.keys(obj||{}).forEach(function(id){if(BYID[id]&&obj[id]){out[id]=obj[id];cnt++}});
+  }
+  if(!cnt)throw new Error('No he encontrado ninguna pregunta en el código. Comprueba que lo has copiado entero.');
+  return out;
+}
+function syncMsg(t,bad){var e=$('syncE');e.textContent=t||'';e.style.color=bad?'var(--red)':'var(--green)'}
 function openSync(m){
-  SYNC_MODE=m;var ta=$('syncTa');
+  SYNC_MODE=m;var ta=$('syncTa');syncMsg('');
   if(m==='exp'){
-    var code='FCFA1:'+btoa(unescape(encodeURIComponent(JSON.stringify(ST))));
     $('syncT').textContent='Exportar progreso';
     $('syncP').textContent='Copia este código y pégalo en "Importar progreso" en el otro dispositivo (por ejemplo enviándotelo por mensaje a ti mismo).';
-    ta.value=code;ta.readOnly=true;$('syncGo').textContent='Copiar código';
+    ta.value=encodeST();ta.readOnly=true;$('syncGo').textContent='Copiar código';$('syncPaste').style.display='none';
   }else{
     $('syncT').textContent='Importar progreso';
     $('syncP').textContent='Pega aquí el código exportado. Se combina con tu progreso actual: de cada pregunta se queda el resultado más reciente.';
     ta.value='';ta.readOnly=false;$('syncGo').textContent='Importar';
+    $('syncPaste').style.display=(navigator.clipboard&&navigator.clipboard.readText)?'':'none';
   }
   $('sync').classList.add('on');
   if(m==='exp')setTimeout(function(){ta.focus();ta.select()},50);
@@ -388,26 +421,27 @@ function openSync(m){
 $('expBtn').onclick=function(){openSync('exp')};
 $('impBtn').onclick=function(){openSync('imp')};
 $('syncX').onclick=function(){$('sync').classList.remove('on')};
+$('syncPaste').onclick=function(){
+  navigator.clipboard.readText().then(function(t){$('syncTa').value=t;syncMsg('')},function(){syncMsg('No he podido leer el portapapeles. Mantén pulsado el recuadro y elige Pegar.',true)});
+};
 $('syncGo').onclick=function(){
   var ta=$('syncTa');
   if(SYNC_MODE==='exp'){
     ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);
-    var done=function(){toast('Código copiado')};
+    var done=function(){syncMsg('Código copiado. Ahora envíatelo y pégalo en el otro dispositivo.')};
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(ta.value).then(done,function(){try{document.execCommand('copy');done()}catch(e){}})}
     else{try{document.execCommand('copy');done()}catch(e){}}
     return;
   }
-  var v=ta.value.trim();
-  if(v.indexOf('FCFA1:')!==0){toast('Código no válido');return}
   var inc;
-  try{inc=JSON.parse(decodeURIComponent(escape(atob(v.slice(6)))))}catch(e){toast('Código no válido');return}
-  var n=0;
+  try{inc=decodeCode(ta.value)}catch(e){syncMsg(e.message,true);return}
+  var n=0,tot=0;
   Object.keys(inc).forEach(function(id){
-    if(!BYID[id])return;
-    var a=ST[id],b=inc[id];
+    tot++;var a=ST[id],b=inc[id];
     if(!a||(b.t||0)>(a.t||0)){ST[id]=b;n++}
   });
-  save();renderHome();$('sync').classList.remove('on');toast('Importadas '+n+' preguntas');
+  save();renderHome();$('sync').classList.remove('on');
+  toast(n?('Importadas '+n+' preguntas'):('Ya tenías este progreso ('+tot+')'));
 };
 
 /* ---------- quiz ---------- */
