@@ -181,6 +181,13 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
 @keyframes up{0%{transform:translateY(10px);opacity:0}100%{transform:none;opacity:1}}
 @keyframes shake{0%,100%{transform:none}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
 .fade{animation:up .3s ease-out}
+.sync{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:60;display:none;align-items:flex-end;justify-content:center}
+.sync.on{display:flex}
+.sync .box{background:var(--card);width:100%;max-width:640px;border-radius:20px 20px 0 0;padding:20px 16px calc(20px + var(--safe-b))}
+.sync h3{font-size:20px;margin-bottom:6px}
+.sync p{font-size:14px;color:var(--label2);margin-bottom:12px}
+.sync textarea{width:100%;height:110px;border-radius:12px;border:0;background:var(--fill);color:var(--label);padding:12px;font-size:14px;font-family:ui-monospace,Menlo,monospace;resize:none;margin-bottom:12px}
+.sync .bigbtn{margin-bottom:10px}
 .toast{position:fixed;left:50%;bottom:calc(30px + var(--safe-b));transform:translateX(-50%) translateY(20px);background:var(--card2);color:var(--label);padding:11px 18px;border-radius:14px;font-size:15px;opacity:0;transition:all .3s;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.18);pointer-events:none;white-space:nowrap}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
@@ -223,6 +230,8 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
     <div class="group" id="topicList"></div>
     <div class="sechead">Por examen</div>
     <div class="group" id="srcList"></div>
+    <div class="sechead">Sincronizar con otro dispositivo</div>
+    <div class="group"><button class="row noicon" id="expBtn"><div class="tx"><div class="t">Exportar progreso</div><div class="d">Genera un código para llevarlo a otro dispositivo</div></div></button><button class="row noicon" id="impBtn"><div class="tx"><div class="t">Importar progreso</div><div class="d">Pega el código de otro dispositivo</div></div></button></div>
     <div class="group"><button class="row noicon danger" id="resetBtn"><div class="tx"><div class="t">Reiniciar progreso</div></div></button></div>
     <p class="secfoot" style="margin-bottom:30px">Pendientes = las que aún no has hecho y las que fallaste la última vez. Una pregunta sale de pendientes cuando la aciertas.</p>
   </div>
@@ -262,6 +271,7 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:poin
   </div>
 </section>
 
+<div class="sync" id="sync"><div class="box"><h3 id="syncT"></h3><p id="syncP"></p><textarea id="syncTa" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea><button class="bigbtn" id="syncGo"></button><button class="bigbtn" id="syncX" style="background:var(--fill);color:var(--blue);margin-bottom:0">Cerrar</button></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -357,6 +367,48 @@ $('topicList').addEventListener('click',function(e){var b=e.target.closest('.row
 $('srcList').addEventListener('click',function(e){var b=e.target.closest('.row');if(!b)return;var s=b.dataset.src;var l=pool(function(q){return q.src===s});if(!l.length){toast('Nada pendiente en este examen');return}start(l)});
 $('resetBtn').onclick=function(){if(confirm('¿Borrar todo tu progreso? Las preguntas vuelven a estar pendientes.')){ST={};save();renderHome();toast('Progreso reiniciado')}};
 window.addEventListener('scroll',function(){var y=window.scrollY>8;document.querySelectorAll('#sHome .navbar,#sDone .navbar').forEach(function(n){n.classList.toggle('edge',y)})},{passive:true});
+
+/* ---------- sync ---------- */
+var SYNC_MODE='';
+function openSync(m){
+  SYNC_MODE=m;var ta=$('syncTa');
+  if(m==='exp'){
+    var code='FCFA1:'+btoa(unescape(encodeURIComponent(JSON.stringify(ST))));
+    $('syncT').textContent='Exportar progreso';
+    $('syncP').textContent='Copia este código y pégalo en "Importar progreso" en el otro dispositivo (por ejemplo enviándotelo por mensaje a ti mismo).';
+    ta.value=code;ta.readOnly=true;$('syncGo').textContent='Copiar código';
+  }else{
+    $('syncT').textContent='Importar progreso';
+    $('syncP').textContent='Pega aquí el código exportado. Se combina con tu progreso actual: de cada pregunta se queda el resultado más reciente.';
+    ta.value='';ta.readOnly=false;$('syncGo').textContent='Importar';
+  }
+  $('sync').classList.add('on');
+  if(m==='exp')setTimeout(function(){ta.focus();ta.select()},50);
+}
+$('expBtn').onclick=function(){openSync('exp')};
+$('impBtn').onclick=function(){openSync('imp')};
+$('syncX').onclick=function(){$('sync').classList.remove('on')};
+$('syncGo').onclick=function(){
+  var ta=$('syncTa');
+  if(SYNC_MODE==='exp'){
+    ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);
+    var done=function(){toast('Código copiado')};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(ta.value).then(done,function(){try{document.execCommand('copy');done()}catch(e){}})}
+    else{try{document.execCommand('copy');done()}catch(e){}}
+    return;
+  }
+  var v=ta.value.trim();
+  if(v.indexOf('FCFA1:')!==0){toast('Código no válido');return}
+  var inc;
+  try{inc=JSON.parse(decodeURIComponent(escape(atob(v.slice(6)))))}catch(e){toast('Código no válido');return}
+  var n=0;
+  Object.keys(inc).forEach(function(id){
+    if(!BYID[id])return;
+    var a=ST[id],b=inc[id];
+    if(!a||(b.t||0)>(a.t||0)){ST[id]=b;n++}
+  });
+  save();renderHome();$('sync').classList.remove('on');toast('Importadas '+n+' preguntas');
+};
 
 /* ---------- quiz ---------- */
 var S=null;
